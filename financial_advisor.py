@@ -47,10 +47,10 @@ def load_stock_data(ticker:str, start_date:str, end_date:str):
     if df.empty:
         return {"status": 'Failed to download and create dataframe. Provide correct ticker symbol and start/end date.'}
     else:    
-        filename = save_to_db(df, ticker, "data")
+        output_filename = save_to_db(df, ticker, "data")
         return {
             'status': f'Dataframe has been successfully created for {start_date} to {end_date} of {ticker} and saved locally', 
-            'filename':filename,
+            'filename':output_filename,
             'dataframe_info':df_info
             }
 
@@ -76,11 +76,11 @@ def calc_moving_average(filename:str, day_count:int):
     elif f'SMA_{day_count}' not in df.columns:
         return {"status": 'Failed to create moving average. Provide valid data / day count'}
     else:    
-        filename = save_to_db(df, filename=filename)
-        if filename is not None:
+        output_filename = save_to_db(df, filename=filename)
+        if output_filename is not None:
             return {
                 'status': 'Moving Average has been successfully created and database updated.', 
-                'filename':filename,
+                'filename':output_filename,
                 'dataframe_info':df_info,
                 }
 
@@ -107,11 +107,11 @@ def create_bull_indicator(filename: str, day_count:int):
     elif 'bull_indicator' not in df.columns:
         return {"status": 'Failed to create bull indicator. Provide valid data / day count'}
     else:    
-        filename = save_to_db(df, filename=filename)
-        if filename is not None:
+        output_filename = save_to_db(df, filename=filename)
+        if output_filename is not None:
             return {
                 'status': 'Bull indicator has been successfully created and database updated', 
-                'filename':filename,
+                'filename':output_filename,
                 'dataframe_info': df_info,
                 }
 
@@ -134,11 +134,11 @@ def load_stock_info(ticker:str):
     if df.empty:
         return {"status": 'Failed to download and create dataframe. Provide correct ticker symbol and start/end date.'}
     else:
-        filename = save_to_db(df, ticker, "ticker_info")
+        output_filename = save_to_db(df, ticker, "ticker_info")
         if filename is not None:
             return {
                         'status': f'Dataframe for {ticker} successfully created and saved locally', 
-                        'filename':filename,
+                        'filename':output_filename,
                         'dataframe_info':df_info
                     }
 
@@ -205,54 +205,64 @@ def plot_graph(filename: str, ticker:str, day_count:int):
     ax.set_ylabel('Price (USD)')
     ax.legend(loc='upper left')
     ax.grid(True, linestyle=':', alpha=0.6)
-    plt.savefig(f'data/{ticker}_chart.png')
+    
+    output_filename = f'data/{ticker}_chart.png'
+    plt.savefig(output_filename)
 
     return {
         'status': 'Graph has been successfully plotted and saved locally', 
-        'filename':f'{ticker}_chart.png'
+        'filename':output_filename,
         }
 
+def ai_agent(chat_history):
+    tools = [yahoo_tool, load_stock_data, load_stock_info, calc_moving_average, create_bull_indicator, plot_graph, read_stock_info]
 
-tools = [yahoo_tool, load_stock_data, load_stock_info, calc_moving_average, create_bull_indicator, plot_graph, read_stock_info]
-
-agent = create_agent(model=llm, tools=tools)
-
-today = date.today()
-chat_history= [(
-    "system",f"""
-            Persona: You provide helpful insights into stock developments and current market movements. Choose the information based on the user-oriented depth and complexity.
-
-            Output format: 
-            (1) Provide the output in a markdown schema as follows:
-            '##' for 'Title / Header' 
-            '####' for 'Subtitle / Subheader'
-            '**' for 'key highlights'
-            '*' for local source reference, such as csv or png files
-            '-' for a list of unordered elements
-            '1,2,3' for a list of ordered elements
-            'Table Syntax' for tabular data / information
-
-            (2) Depending on the depth of the question use the following output strucures as baseline:
-            a) short --> general company summary, include up to 3 financial key information, include last price
-            b) mid -->  short news summary, general company summary, include up to 7 financial key information
-            c) long --> detailed news summary, detailed company summary, include up to 20 financial key information
-
-            Audience: The user can range from a financial analyst to an amateur. 
-
-            Methods: You are given different tools in order to address the users need and provide information in different ways. 
-
-            - You are explicitly forbidden to estimate or making up any financial numbers in your analysis or output.
-            - For reference: Today's date is {today}
-            """)]
+    agent = create_agent(model=llm, tools=tools)
 
 
 
-question = "Download Apple stock data for the last year, calculate the 30-day moving average, and create a graphical display of the price."
+    response = agent.invoke({"messages":chat_history})
+    return response
 
-chat_history.append(("user",question))
 
-response = agent.invoke({"messages":chat_history})
-print("AI",response["messages"][-1].content)
+def initialize_agent():
+    today = date.today()
+    chat_history= [(
+        "system",f"""
+                Persona: You provide helpful insights into stock developments and current market movements. Choose the information based on the user-oriented depth and complexity.
 
-for line in response["messages"]:
-    line.pretty_print()
+                Output format: 
+                (1) Provide the output in a markdown schema as follows:
+                '##' for 'Title / Header' 
+                '####' for 'Subtitle / Subheader'
+                '**' for 'key highlights'
+                ![Title](filename) for local source png files
+                '-' for a list of unordered elements
+                '1,2,3' for a list of ordered elements
+                'Table Syntax' for tabular data / information
+
+                (2) Depending on the depth of the prompt use the following output strucures as baseline:
+                a) short --> general company summary, include up to 3 financial key information, include last price
+                b) mid -->  short news summary, general company summary, include up to 7 financial key information
+                c) long --> detailed news summary, detailed company summary, include up to 20 financial key information
+
+                Audience: The user can range from a financial analyst to an amateur. 
+
+                Methods: You are given different tools in order to address the users need and provide information in different ways. 
+
+                - You are explicitly forbidden to estimate or making up any financial numbers in your analysis or output.
+                - For reference: Today's date is {today}
+                """)]
+    return chat_history
+
+if __name__ == "__main__":
+    prompt = "Download Apple stock data for the last year, calculate the 30-day moving average, and create a graphical display of the price."
+    
+    chat_history = initialize_agent()
+    chat_history.append(("user",prompt))
+    response = ai_agent(chat_history)
+    
+    print("AI",response["messages"][-1].content)
+
+    for line in response["messages"]:
+        line.pretty_print()
